@@ -11,22 +11,28 @@ namespace bookmark_issue_55
 {
     class Program
     {
-        private static Guid uid = Guid.NewGuid(); 
-        private static EventWaitHandle _unloadedEvent = 
-            new EventWaitHandle(false, EventResetMode.ManualReset);
+        private static readonly AutoResetEvent _unloadedEvent = new AutoResetEvent(false);
 
         static void Main(string[] args)
         {
-            WorkflowApplication wfApp = CreateWorkflowApplication();
-            var workflowInstanceId = wfApp.Id;
+            var wfApp = CreateWorkflowApplication();
+
             wfApp.Run();
-            string bookmarkName = workflowInstanceId.ToString();
-            //wfApp.Unload();
+            var workflowInstanceId = wfApp.Id;
             _unloadedEvent.WaitOne();
-            /* create */
+            /* new scope */
             wfApp = CreateWorkflowApplication();
             wfApp.Load(workflowInstanceId);
-            var result = wfApp.ResumeBookmark(bookmarkName, null); // <- this hits the BookmarkActivity while **IT SHOULD'NT**
+
+            Console.WriteLine("copy guid above here");
+            string bookmarkName = Console.ReadLine();
+
+            var result = wfApp.ResumeBookmark(bookmarkName, null);
+
+            if (result != BookmarkResumptionResult.Success)
+            {
+                Console.WriteLine("Failed!");
+            }
 
             Console.ReadKey();
         }
@@ -35,11 +41,8 @@ namespace bookmark_issue_55
             Activity wf = CreateWorkflow();
             WorkflowApplication result = new WorkflowApplication(wf)
             {
-                InstanceStore = new XmlWorkflowInstanceStore(uid),
-                Unloaded = e =>
-                {
-                    _unloadedEvent.Set();
-                },
+                InstanceStore = new FileInstanceStore("."),
+                Unloaded = e => _unloadedEvent.Set(),
                 PersistableIdle = e => PersistableIdleAction.Unload
             };
 
@@ -70,18 +73,17 @@ namespace bookmark_issue_55
         {
             protected override void Execute(NativeActivityContext context)
             {
-                Guid wfInstanceId = context.WorkflowInstanceId;
-                string bookmarkName = wfInstanceId.ToString();
+                string bookmarkName = Guid.NewGuid().ToString();
 
-                Console.WriteLine("BookmarkActivity.Execute - creating bookmark with name {0}", bookmarkName);
                 context.CreateBookmark(bookmarkName, new BookmarkCallback(BookmarkCallback), BookmarkOptions.MultipleResume);
+                Console.WriteLine("BookmarkActivity.Execute - successfull created bookmark with name {0}", bookmarkName);
             }
 
             protected override bool CanInduceIdle => true;
 
             private void BookmarkCallback(NativeActivityContext context, Bookmark bookmark, object bookmarkData)
             {
-                Console.WriteLine($"Bookmark {bookmark.Name} resumed with data that is not a string");
+                Console.WriteLine($"Bookmark {bookmark.Name} resumed.");
             }
         }
     }
